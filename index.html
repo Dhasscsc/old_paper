@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="ta">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>பழைய ஆவண மாற்றி - Old Paper Document Converter</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        .a4-preview {
+            width: 210mm;
+            height: 297mm;
+            max-width: 100%;
+            position: relative;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            overflow: auto;
+        }
+        /* Background layer - old paper effect */
+        .bg-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+        /* Content layer - multiply blend removes white background */
+        .document-layer {
+            position: relative;
+            z-index: 2;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            mix-blend-mode: multiply;
+        }
+        .document-layer img,
+        .document-layer canvas {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            background: transparent;
+        }
+        
+        /* ========== IMPORTANT: PRINT FIX ========== */
+        @media print {
+            body {
+                background: white;
+                margin: 0;
+                padding: 0;
+            }
+            .a4-preview {
+                box-shadow: none;
+                margin: 0;
+                padding: 0;
+                width: 100%;
+                height: auto;
+                page-break-after: avoid;
+                break-inside: avoid;
+            }
+            .bg-layer {
+                print-color-adjust: exact !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+                background-blend-mode: normal !important;
+            }
+            .document-layer {
+                print-color-adjust: exact !important;
+                -webkit-print-color-adjust: exact !important;
+            }
+            /* Ensure all colors print */
+            * {
+                print-color-adjust: exact !important;
+                -webkit-print-color-adjust: exact !important;
+            }
+        }
+        
+        /* Print instruction box */
+        .print-instruction {
+            background: #fef3c7;
+            border-left: 4px solid #d97706;
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-top: 12px;
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 p-6 font-sans">
+
+<div class="max-w-6xl mx-auto">
+    <div class="text-center mb-6">
+        <h1 class="text-3xl font-bold text-gray-800">📜 பழைய ஆவண மாற்றி</h1>
+        <p class="text-gray-600">PDF / Image → Old Paper Background → A4 PDF / Print</p>
+    </div>
+
+    <div class="flex flex-wrap gap-6">
+        <!-- Controls -->
+        <div class="w-full md:w-80 bg-white p-5 rounded-2xl shadow-lg h-fit">
+            <h2 class="text-xl font-semibold mb-4">⚙️ கட்டுப்பாடுகள்</h2>
+
+            <label class="block text-sm font-medium mb-1">📂 கோப்பு (PDF/Image)</label>
+            <input type="file" id="fileInput" accept="application/pdf,image/*" class="mb-4 w-full border p-2 rounded">
+
+            <label class="block text-sm font-medium mb-1">📜 பேப்பர் வகை</label>
+            <select id="bgType" class="w-full border p-2 rounded mb-4">
+                <option value="sepia">மிதமான செபியா (Light Sepia)</option>
+                <option value="vintage" selected>பழைய விண்டேஜ் (Vintage Parchment)</option>
+                <option value="grunge">அடர்ந்த பழைய பேப்பர் (Dark Grunge)</option>
+            </select>
+
+            <label class="block text-sm font-medium mb-1">🎨 பின்னணி தீவிரம்</label>
+            <input type="range" id="opacitySlider" min="50" max="100" value="85" class="w-full mb-2">
+            <span id="opacityValue" class="text-sm text-gray-600">85%</span>
+
+            <button id="downloadBtn" disabled class="mt-4 w-full bg-green-700 hover:bg-green-800 text-white py-2.5 rounded-xl font-bold disabled:opacity-50 transition">
+                ⬇️ A4 PDF ஆக சேமி
+            </button>
+            
+            <button id="printBtn" disabled class="mt-3 w-full bg-blue-700 hover:bg-blue-800 text-white py-2.5 rounded-xl font-bold disabled:opacity-50 transition">
+                🖨️ Print / அச்சிடுக
+            </button>
+            
+            <!-- Print instruction box -->
+            <div class="print-instruction">
+                <div class="font-bold text-amber-800 mb-1">📌 முக்கிய குறிப்பு:</div>
+                <p class="text-sm text-amber-700">Print செய்யும் போது background வரவில்லை என்றால்:</p>
+                <ol class="text-xs text-amber-600 mt-1 ml-4 list-decimal">
+                    <li>Print preview-ல் <strong>"More settings"</strong> அழுத்தவும்</li>
+                    <li><strong>"Background graphics"</strong> option-ஐ ON செய்யவும்</li>
+                    <li>Chrome: "Print backgrounds" checkbox தேர்வு செய்யவும்</li>
+                </ol>
+            </div>
+        </div>
+
+        <!-- Preview -->
+        <div class="flex-1 flex flex-col items-center">
+            <div id="a4Canvas" class="a4-preview rounded-lg overflow-hidden relative bg-[#d4b896]">
+                <div id="bgLayer" class="bg-layer"></div>
+                <div id="documentLayer" class="document-layer">
+                    <div class="text-center text-gray-600 p-8 border-2 border-dashed rounded bg-white/50">
+                        ⬅️ PDF / Image பதிவேற்றவும்<br>முன்னோட்டம் இங்கு தெரியும்
+                    </div>
+                </div>
+            </div>
+            <p class="text-xs text-gray-500 mt-2">✅ multiply blend mode - வெள்ளை பின்னணி மறைந்து பழைய பேப்பர் தெரியும்</p>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Initialize PDF.js
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+
+    // Background textures - safe CSS colors
+    const getBackgroundStyle = (type, opacity) => {
+        const op = opacity / 100;
+        if (type === 'sepia') {
+            return `linear-gradient(rgba(230, 200, 150, ${op}), rgba(210, 175, 120, ${op})), repeating-linear-gradient(45deg, rgba(0,0,0,0.03) 0px, rgba(0,0,0,0.03) 2px, transparent 2px, transparent 8px)`;
+        } else if (type === 'vintage') {
+            return `linear-gradient(rgba(210, 175, 115, ${op}), rgba(185, 145, 90, ${op})), repeating-linear-gradient(0deg, rgba(0,0,0,0.04) 0px, rgba(0,0,0,0.04) 1px, transparent 1px, transparent 6px)`;
+        } else {
+            return `linear-gradient(rgba(170, 130, 80, ${op}), rgba(140, 100, 60, ${op})), repeating-radial-gradient(circle at 20% 30%, rgba(0,0,0,0.05) 0px, rgba(0,0,0,0.05) 2px, transparent 2px, transparent 10px)`;
+        }
+    };
+
+    const fileInput = document.getElementById('fileInput');
+    const bgType = document.getElementById('bgType');
+    const opacitySlider = document.getElementById('opacitySlider');
+    const opacityValue = document.getElementById('opacityValue');
+    const bgLayer = document.getElementById('bgLayer');
+    const documentLayer = document.getElementById('documentLayer');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const printBtn = document.getElementById('printBtn');
+    const a4Container = document.getElementById('a4Canvas');
+
+    let currentContent = null;
+    let isLoaded = false;
+
+    // Update background
+    function updateBackground() {
+        const type = bgType.value;
+        const opacity = parseInt(opacitySlider.value);
+        opacityValue.innerText = opacity + '%';
+        bgLayer.style.background = getBackgroundStyle(type, opacity);
+        bgLayer.style.backgroundBlendMode = 'normal';
+        bgLayer.style.backgroundSize = 'cover, auto';
+    }
+
+    bgType.addEventListener('change', updateBackground);
+    opacitySlider.addEventListener('input', updateBackground);
+    updateBackground();
+
+    function clearPreview() {
+        if (currentContent && currentContent.remove) {
+            currentContent.remove();
+        }
+        documentLayer.innerHTML = `<div class="text-center text-gray-600 p-8 border-2 border-dashed rounded bg-white/50">⬅️ PDF / Image பதிவேற்றவும்<br>முன்னோட்டம் இங்கு தெரியும்</div>`;
+        currentContent = null;
+        isLoaded = false;
+        downloadBtn.disabled = true;
+        printBtn.disabled = true;
+    }
+
+    function setContent(element) {
+        clearPreview();
+        documentLayer.innerHTML = '';
+        documentLayer.appendChild(element);
+        currentContent = element;
+        isLoaded = true;
+        downloadBtn.disabled = false;
+        printBtn.disabled = false;
+    }
+
+    // Image handler
+    fileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        if (file.type.startsWith('image/')) {
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                const img = document.createElement('img');
+                img.src = ev.target.result;
+                img.style.maxWidth = '100%';
+                img.style.maxHeight = '100%';
+                img.style.display = 'block';
+                setContent(img);
+            };
+            reader.readAsDataURL(file);
+        } 
+        else if (file.type === 'application/pdf') {
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                const typedarray = new Uint8Array(ev.target.result);
+                pdfjsLib.getDocument(typedarray).promise.then(pdf => {
+                    pdf.getPage(1).then(page => {
+                        const scale = 1.8;
+                        const viewport = page.getViewport({ scale });
+                        const canvas = document.createElement('canvas');
+                        canvas.width = viewport.width;
+                        canvas.height = viewport.height;
+                        canvas.style.width = 'auto';
+                        canvas.style.height = 'auto';
+                        canvas.style.maxWidth = '100%';
+                        canvas.style.maxHeight = '100%';
+                        const ctx = canvas.getContext('2d');
+                        ctx.fillStyle = 'white';
+                        ctx.fillRect(0, 0, canvas.width, canvas.height);
+                        page.render({ canvasContext: ctx, viewport }).promise.then(() => {
+                            setContent(canvas);
+                        });
+                    });
+                }).catch(err => {
+                    alert("PDF ஏற்ற முடியவில்லை: " + err.message);
+                    clearPreview();
+                });
+            };
+            reader.readAsArrayBuffer(file);
+        }
+    });
+
+    // PDF Export using html2canvas + jspdf
+    downloadBtn.addEventListener('click', async () => {
+        if (!isLoaded) {
+            alert("முதலில் PDF அல்லது படத்தை பதிவேற்றவும்!");
+            return;
+        }
+
+        downloadBtn.innerText = "⏳ PDF தயாராகிறது...";
+        downloadBtn.disabled = true;
+
+        try {
+            const element = a4Container;
+            
+            const canvas = await html2canvas(element, {
+                scale: 2.5,
+                useCORS: true,
+                backgroundColor: '#f4e9d8',
+                logging: false,
+                allowTaint: false,
+                windowWidth: element.scrollWidth,
+                windowHeight: element.scrollHeight
+            });
+            
+            const { jsPDF } = window.jspdf;
+            const pdf = new jsPDF({
+                unit: 'mm',
+                format: 'a4',
+                orientation: 'portrait'
+            });
+            
+            const imgData = canvas.toDataURL('image/jpeg', 0.95);
+            const pdfWidth = pdf.internal.pageSize.getWidth();
+            const pdfHeight = pdf.internal.pageSize.getHeight();
+            
+            pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+            pdf.save(`oldpaper_document_${Date.now()}.pdf`);
+            
+            downloadBtn.innerText = "⬇️ A4 PDF ஆக சேமி";
+            downloadBtn.disabled = false;
+            
+            const msg = document.createElement('div');
+            msg.innerText = "✅ PDF வெற்றிகரமாக சேமிக்கப்பட்டது!";
+            msg.style.cssText = "position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:green; color:white; padding:10px 20px; border-radius:10px; z-index:9999; font-weight:bold;";
+            document.body.appendChild(msg);
+            setTimeout(() => msg.remove(), 3000);
+            
+        } catch (error) {
+            console.error("PDF Error:", error);
+            alert("PDF உருவாக்கத்தில் சிக்கல். மீண்டும் முயற்சிக்கவும்.\n\nError: " + error.message);
+            downloadBtn.innerText = "⬇️ A4 PDF ஆக சேமி";
+            downloadBtn.disabled = false;
+        }
+    });
+
+    // Print function
+    printBtn.addEventListener('click', () => {
+        if (!isLoaded) {
+            alert("முதலில் PDF அல்லது படத்தை பதிவேற்றவும்!");
+            return;
+        }
+        window.print();
+    });
+</script>
+</body>
+</html>
